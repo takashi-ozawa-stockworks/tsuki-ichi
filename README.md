@@ -89,6 +89,7 @@ Excelのようなリスト形式で、数値を直接入力・編集します。
     ```env
     PUBLIC_SUPABASE_URL=your_supabase_project_url
     PUBLIC_SUPABASE_ANON_KEY=your_supabase_anon_key
+    SUPABASE_SERVICE_ROLE_KEY=your_supabase_secret_key
     ```
 
 4.  **ローカルサーバーの起動**
