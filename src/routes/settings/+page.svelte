@@ -8,6 +8,7 @@
   let accounts: any[] = [];
   let loading = true;
   let processing = false; // 処理中フラグ
+  let submitting = false; // 追加処理中のフラグ
 
   let newCategoryName = '';
   let newCategoryType = 'expense';
@@ -28,35 +29,83 @@
 
   onMount(fetchData);
 
-  // --- 通常の追加・削除処理 ---
-  const addCategory = async () => {
-    if (!newCategoryName) return;
-    const { data: { user } } = await supabase.auth.getUser();
-    const { error } = await supabase.from('categories').insert({
-      user_id: user?.id, name: newCategoryName, type: newCategoryType
-    });
-    if (!error) { newCategoryName = ''; await fetchData(); }
-    else alert(error.message);
+  // 共通バリデーション関数
+  const validateInput = (name: string, list: any[], label: string) => {
+    const trimmedName = name.trim();
+    if (!trimmedName) {
+      alert(`${label}を入力してください`);
+      return null;
+    }
+    if (trimmedName.length > 20) {
+      alert(`${label}は20文字以内で入力してください`);
+      return null;
+    }
+    // 重複チェック (既存リストの中に同じ名前があるか)
+    const isDuplicate = list.some(item => item.name === trimmedName);
+    if (isDuplicate) {
+      alert(`「${trimmedName}」は既に登録されています`);
+      return null;
+    }
+    return trimmedName;
   };
 
+  // カテゴリー追加
+  const addCategory = async () => {
+    // バリデーション実行
+    const validName = validateInput(newCategoryName, categories, '費目名');
+    if (!validName) return;
+
+    submitting = true; // 連打防止ON
+    const { data: { user } } = await supabase.auth.getUser();
+    
+    const { error } = await supabase.from('categories').insert({
+      user_id: user?.id, 
+      name: validName, // トリム済みの名前を使う
+      type: newCategoryType
+    });
+
+    if (!error) { 
+      newCategoryName = ''; 
+      await fetchData(); 
+    } else {
+      alert('エラーが発生しました: ' + error.message);
+    }
+    submitting = false; // 連打防止OFF
+  };
+
+  // カテゴリー削除
   const deleteCategory = async (id: number) => {
-    if(!confirm('削除しますか？')) return;
+    if(!confirm('削除しますか？\n※これまでの入力データも集計されなくなります')) return;
     const { error } = await supabase.from('categories').delete().eq('id', id);
     if (!error) await fetchData();
   };
 
+  // 口座追加
   const addAccount = async () => {
-    if (!newAccountName) return;
+    const validName = validateInput(newAccountName, accounts, '口座名');
+    if (!validName) return;
+
+    submitting = true;
     const { data: { user } } = await supabase.auth.getUser();
+
     const { error } = await supabase.from('accounts').insert({
-      user_id: user?.id, name: newAccountName, type: 'bank'
+      user_id: user?.id, 
+      name: validName, 
+      type: 'bank'
     });
-    if (!error) { newAccountName = ''; await fetchData(); }
-    else alert(error.message);
+
+    if (!error) { 
+      newAccountName = ''; 
+      await fetchData(); 
+    } else {
+      alert('エラーが発生しました: ' + error.message);
+    }
+    submitting = false;
   };
 
+  // 口座削除
   const deleteAccount = async (id: number) => {
-    if(!confirm('削除しますか？')) return;
+    if(!confirm('削除しますか？\n※残高データも消える可能性があります')) return;
     const { error } = await supabase.from('accounts').delete().eq('id', id);
     if (!error) await fetchData();
   };
@@ -181,8 +230,8 @@
         <option value="expense">支出</option>
         <option value="income">収入</option>
       </select>
-      <input type="text" bind:value={newCategoryName} placeholder="費目名" class="flex-1 rounded border-gray-300 py-2 text-sm" />
-      <button on:click={addCategory} disabled={!newCategoryName} class="rounded bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700 disabled:opacity-50">追加</button>
+      <input type="text" bind:value={newCategoryName} placeholder="費目名（20文字以内）" class="flex-1 rounded border-gray-300 py-2 text-sm" />
+      <button on:click={addCategory} disabled={!newCategoryName || submitting} class="rounded bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700 disabled:opacity-50">{submitting ? '追加中...' : '追加'}</button>
     </div>
     {#if loading}
       <p class="text-gray-400">Loading...</p>
@@ -216,8 +265,8 @@
   <section class="rounded-lg bg-white p-6 shadow-sm border border-gray-200">
     <h3 class="mb-4 text-lg font-bold flex items-center gap-2">🏦 口座・資産設定</h3>
     <div class="mb-6 flex gap-2">
-      <input type="text" bind:value={newAccountName} placeholder="口座名" class="flex-1 rounded border-gray-300 py-2 text-sm" />
-      <button on:click={addAccount} disabled={!newAccountName} class="rounded bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700 disabled:opacity-50">追加</button>
+      <input type="text" bind:value={newAccountName} placeholder="口座名（20文字以内）" class="flex-1 rounded border-gray-300 py-2 text-sm" />
+      <button on:click={addAccount} disabled={!newAccountName || submitting} class="rounded bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700 disabled:opacity-50">{submitting ? '追加中...' : '追加'}</button>
     </div>
     {#if loading}
       <p class="text-gray-400">Loading...</p>
@@ -271,3 +320,4 @@
     </section>
   {/if}
 </div>
+

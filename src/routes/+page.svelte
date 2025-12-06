@@ -7,116 +7,214 @@
   // --- 変数定義 ---
   let loading = true;
   const today = new Date();
-  let year = today.getFullYear();
-  let month = today.getMonth() + 1;
+  
+  // 現在の年月（未来制限用）
+  const currentYear = today.getFullYear();
+  const currentMonth = today.getMonth() + 1;
+  const maxDateStr = `${currentYear}-${String(currentMonth).padStart(2, '0')}`;
+
+  // 選択中の年月
+  let year = currentYear;
+  let month = currentMonth;
+
+  // カレンダーピッカー用 ("YYYY-MM"形式)
+  $: pickerValue = `${year}-${String(month).padStart(2, '0')}`;
+
+  // カレンダー強制表示用
+  let dateInput: HTMLInputElement;
+  const openPicker = () => {
+    try {
+      dateInput.showPicker();
+    } catch (e) {
+      console.warn(e);
+    }
+  };
+
+  const handleDateChange = (e: Event) => {
+    const val = (e.target as HTMLInputElement).value;
+    if (val) {
+      const [y, m] = val.split('-');
+      year = parseInt(y);
+      month = parseInt(m);
+    }
+  };
 
   // 集計結果
   let totalAssets = 0;
-  let prevTotalAssets = 0; // 前月比用（今回は簡易的に0扱いで実装）
   let totalIncome = 0;
   let totalExpense = 0;
   
-  // グラフ切り替え ('expense' | 'assets')
+  // 分析用
+  let avgExpense = 0;
+  let trendStatus = 'nodata'; // 'up' | 'down' | 'same' | 'nodata'
+  let diffAmount = 0;
+  let prevTotalAssets = 0;
+  let assetDiff = 0;
+  let assetGrowthRate = 0;
+  let nextMilestone = 0;
+  let toMilestone = 0;
+  
+  // 変動要因分析用
+  let topMoverName = '';
+  let topMoverDiff = 0;
+  let topMoverType = ''; // 'increase' | 'decrease'
+  
+  // グラフ用
   let activeChart = 'expense';
   let chartInstance: any = null;
   let canvasRef: HTMLCanvasElement;
-
-  // データ保持用
   let expenseData: { label: string, value: number }[] = [];
   let assetsData: { label: string, value: number }[] = [];
 
-  // --- データ読み込み ---
   const loadDashboardData = async () => {
     loading = true;
     const { data: { user } } = await supabase.auth.getUser();
-    if (!user) return; // 未ログインは layout で弾かれるのでケア不要
+    if (!user) return;
 
-    // 1. 収支データの取得 (Categoriesをjoinして名前も取る)
+    // 1. 今月のPL
     const { data: plData } = await supabase
       .from('monthly_category_values')
-      .select('amount, category:categories(name, type)')
-      .eq('year', year)
-      .eq('month', month)
-      .eq('user_id', user.id);
+      .select('amount, category_id, category:categories(name, type)')
+      .eq('year', year).eq('month', month).eq('user_id', user.id);
 
-    // 2. 資産データの取得 (Accountsをjoin)
+    // 2. 今月のBS
     const { data: bsData } = await supabase
       .from('monthly_account_balances')
       .select('balance, account:accounts(name, type)')
-      .eq('year', year)
-      .eq('month', month)
+      .eq('year', year).eq('month', month).eq('user_id', user.id);
+
+    // 3. 過去トレンド用
+    const { data: historyData } = await supabase
+      .from('monthly_category_values')
+      .select('year, month, amount, category:categories(type)')
       .eq('user_id', user.id);
 
-    // --- 集計処理 ---
+    // 4. 先月のデータ（BS比較 & PL変動分析用）
+    const prevYear = month === 1 ? year - 1 : year;
+    const prevMonth = month === 1 ? 12 : month - 1;
+
+    const { data: prevBsData } = await supabase
+      .from('monthly_account_balances')
+      .select('balance')
+      .eq('year', prevYear).eq('month', prevMonth).eq('user_id', user.id);
+
+    const { data: prevPlData } = await supabase
+      .from('monthly_category_values')
+      .select('amount, category_id, category:categories(name, type)')
+      .eq('year', prevYear).eq('month', prevMonth).eq('user_id', user.id);
+
+    // --- 集計 ---
     totalIncome = 0;
     totalExpense = 0;
     expenseData = [];
-
-    // PL集計
     plData?.forEach((item: any) => {
-      const amount = item.amount;
-      const type = item.category.type;
-      const name = item.category.name;
-
-      if (type === 'income') {
-        totalIncome += amount;
-      } else {
-        totalExpense += amount;
-        if (amount > 0) expenseData.push({ label: name, value: amount });
+      if (item.category.type === 'income') totalIncome += item.amount;
+      else {
+        totalExpense += item.amount;
+        if (item.amount > 0) expenseData.push({ label: item.category.name, value: item.amount });
       }
     });
 
-    // BS集計
     totalAssets = 0;
     assetsData = [];
     bsData?.forEach((item: any) => {
-      const balance = item.balance;
-      const name = item.account.name;
-      
-      totalAssets += balance;
-      if (balance > 0) assetsData.push({ label: name, value: balance });
+      totalAssets += item.balance;
+      if (item.balance > 0) assetsData.push({ label: item.account.name, value: item.balance });
     });
 
+    // --- 分析ロジック ---
+
+    // A. 支出トレンド & 変動要因
+    topMoverName = ''; // リセット
+    
+    if (historyData) {
+      const monthlyTotals: Record<string, number> = {};
+      historyData.forEach((item: any) => {
+        if (item.category.type === 'expense' && !(item.year === year && item.month === month)) {
+          const key = `${item.year}-${item.month}`;
+          monthlyTotals[key] = (monthlyTotals[key] || 0) + item.amount;
+        }
+      });
+      const totalsArray = Object.values(monthlyTotals);
+      
+      // 平均計算
+      if (totalsArray.length > 0) {
+        const sumHistory = totalsArray.reduce((a, b) => a + b, 0);
+        avgExpense = Math.round(sumHistory / totalsArray.length);
+        diffAmount = totalExpense - avgExpense;
+        if (totalExpense > avgExpense * 1.05) trendStatus = 'up';
+        else if (totalExpense < avgExpense * 0.95) trendStatus = 'down';
+        else trendStatus = 'same';
+      } else {
+        trendStatus = 'nodata';
+      }
+
+      // 変動要因分析 (今月 vs 先月)
+      if (prevPlData) {
+        let maxIncrease = -1;
+        let maxDecrease = 1;
+        let maxIncName = '';
+        let maxDecName = '';
+
+        const prevMap: Record<number, number> = {};
+        prevPlData.forEach((item: any) => {
+          if (item.category.type === 'expense') prevMap[item.category_id] = item.amount;
+        });
+
+        plData?.forEach((item: any) => {
+          if (item.category.type === 'expense') {
+            const prevAmount = prevMap[item.category_id] || 0;
+            const diff = item.amount - prevAmount;
+            if (diff > maxIncrease) { maxIncrease = diff; maxIncName = item.category.name; }
+            if (diff < maxDecrease) { maxDecrease = diff; maxDecName = item.category.name; }
+          }
+        });
+
+        // 全体傾向に合わせて表示する要因を決める
+        // 使いすぎ傾向なら「増加要因」、節約傾向なら「減少要因」を優先
+        if (totalExpense >= (avgExpense || totalExpense)) {
+           if (maxIncrease > 0) { topMoverName = maxIncName; topMoverDiff = maxIncrease; topMoverType = 'increase'; }
+        } else {
+           if (maxDecrease < 0) { topMoverName = maxDecName; topMoverDiff = maxDecrease; topMoverType = 'decrease'; }
+        }
+        // フォールバック: どちらかしか無い場合
+        if (!topMoverName && maxIncrease > 0) { topMoverName = maxIncName; topMoverDiff = maxIncrease; topMoverType = 'increase'; }
+      }
+    }
+
+    // B. 資産分析
+    prevTotalAssets = 0;
+    prevBsData?.forEach((item: any) => prevTotalAssets += item.balance);
+    if (prevTotalAssets > 0) {
+      assetDiff = totalAssets - prevTotalAssets;
+      assetGrowthRate = parseFloat(((assetDiff / prevTotalAssets) * 100).toFixed(1));
+    } else {
+      assetDiff = 0;
+      assetGrowthRate = 0;
+    }
+
+    const unit = 1000000;
+    nextMilestone = Math.ceil((totalAssets + 1) / unit) * unit;
+    toMilestone = nextMilestone - totalAssets;
+
     loading = false;
-    // データ読み込み後にグラフを描画
     setTimeout(renderChart, 0);
   };
 
-  // 年月変更で再読み込み
   $: year, month, loadDashboardData();
-  // タブ切り替えでグラフ再描画
   $: activeChart, renderChart();
 
-  // --- グラフ描画ロジック (Chart.js) ---
   const renderChart = () => {
     if (!canvasRef) return;
-    if (chartInstance) chartInstance.destroy(); // 前のグラフを消す
+    if (chartInstance) chartInstance.destroy();
 
     const targetData = activeChart === 'expense' ? expenseData : assetsData;
-    const bgColors = [
-      '#6366f1', // Indigo-500
-      '#ec4899', // Pink-500
-      '#8b5cf6', // Violet-500
-      '#14b8a6', // Teal-500
-      '#f59e0b', // Amber-500
-      '#3b82f6', // Blue-500
-      '#10b981', // Emerald-500
-      '#ef4444', // Red-500
-      '#84cc16', // Lime-500
-      '#06b6d4', // Cyan-500
-      '#d946ef', // Fuchsia-500
-      '#f97316', // Orange-500
-      '#0ea5e9', // Sky-500
-      '#eab308', // Yellow-500
-      '#a855f7', // Purple-500
-      '#f43f5e', // Rose-500
-      '#64748b', // Slate-500
-      '#854d0e', // Yellow-800 (Bronze)
-      '#1e40af', // Blue-800 (Dark Blue)
-      '#15803d', // Green-700 (Dark Green)
+    const baseColors = [
+      '#6366f1', '#ec4899', '#8b5cf6', '#14b8a6', '#f59e0b', '#3b82f6', '#10b981', '#ef4444', '#84cc16', '#06b6d4',
+      '#d946ef', '#f97316', '#0ea5e9', '#eab308', '#a855f7', '#f43f5e', '#64748b', '#854d0e', '#1e40af', '#15803d',
     ];
-
-    if (targetData.length === 0) return; // データがない時は描画しない
+    if (targetData.length === 0) return;
+    const bgColors = targetData.map((_, index) => baseColors[index % baseColors.length]);
 
     chartInstance = new Chart(canvasRef, {
       type: 'doughnut',
@@ -133,22 +231,20 @@
         responsive: true,
         maintainAspectRatio: false,
         plugins: {
-          legend: { position: 'right' },
+          // 凡例を下に配置、スタイル調整
+          legend: { 
+            position: 'bottom', 
+            align: 'start', 
+            labels: { boxWidth: 12, font: { size: 11 }, padding: 15 } 
+          },
           datalabels: {
             color: '#fff',
-            font: {
-              weight: 'bold',
-              size: 12
-            },
+            font: { weight: 'bold', size: 12 },
             formatter: (value, ctx) => {
-              // 合計値を計算して % を出すロジック
               let sum = 0;
               let dataArr: any = ctx.chart.data.datasets[0].data;
-              dataArr.map((data: number) => {
-                sum += data;
-              });
-              let percentage = (value * 100 / sum).toFixed(0) + "%";
-              return percentage;
+              dataArr.map((data: number) => { sum += data; });
+              return (value * 100 / sum).toFixed(0) + "%";
             }
           }
         }
@@ -162,12 +258,45 @@
 <div class="space-y-6 pb-24">
   
   <div class="flex items-center justify-between">
-    <button class="text-gray-400 hover:text-gray-600 px-2" on:click={() => { month--; if(month<1){month=12; year--} }}>
-      &lt; 前月
+    <button 
+      class="text-gray-400 hover:text-gray-600 px-2 rounded-full hover:bg-gray-100 h-10 w-10 flex items-center justify-center transition-colors" 
+      on:click={() => { month--; if(month<1){month=12; year--} }}
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+      </svg>
     </button>
-    <h2 class="text-xl font-bold text-gray-800">{year}年 {month}月</h2>
-    <button class="text-gray-400 hover:text-gray-600 px-2" on:click={() => { month++; if(month>12){month=1; year++} }}>
-      翌月 &gt;
+
+    <button 
+      class="relative group flex-1 text-center focus:outline-none" 
+      on:click={openPicker}
+    >
+      <input
+        bind:this={dateInput}
+        type="month"
+        max={maxDateStr}
+        value={pickerValue}
+        on:input={handleDateChange}
+        class="absolute inset-0 w-full h-full opacity-0 -z-10 cursor-pointer"
+      />
+      <div class="inline-flex items-center gap-2 px-4 py-2 rounded-lg group-hover:bg-gray-100 transition-colors cursor-pointer">
+        <h2 class="text-xl font-bold text-gray-800 tracking-tight select-none">
+          {year}年 {month}月
+        </h2>
+        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-5 h-5 text-gray-400">
+          <path stroke-linecap="round" stroke-linejoin="round" d="M19.5 8.25l-7.5 7.5-7.5-7.5" />
+        </svg>
+      </div>
+    </button>
+
+    <button 
+      class="text-gray-400 hover:text-gray-600 px-2 rounded-full hover:bg-gray-100 h-10 w-10 flex items-center justify-center transition-colors disabled:opacity-30 disabled:hover:bg-transparent disabled:cursor-not-allowed" 
+      on:click={() => { month++; if(month>12){month=1; year++} }}
+      disabled={pickerValue >= maxDateStr}
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-5 h-5">
+        <path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+      </svg>
     </button>
   </div>
 
@@ -179,6 +308,88 @@
     <div class="mt-4 text-xs opacity-70 text-right">
       ※ 月末時点の資産合計
     </div>
+  </div>
+
+  <div class="grid grid-cols-1 sm:grid-cols-2 gap-4">
+    {#if trendStatus !== 'nodata' && totalExpense > 0}
+      <div class="rounded-lg bg-white p-4 shadow-sm border border-gray-200">
+        <p class="text-xs text-gray-500 mb-2">支出トレンド (vs 平均)</p>
+        <div class="flex items-center justify-between">
+          <div>
+            {#if trendStatus === 'up'}
+              <div class="flex items-baseline gap-1">
+                <span class="text-lg font-bold text-red-500">⚠ 使いすぎ</span>
+                <span class="text-xs text-red-400 font-bold">+{diffAmount.toLocaleString()}</span>
+              </div>
+            {:else if trendStatus === 'down'}
+              <div class="flex items-baseline gap-1">
+                <span class="text-lg font-bold text-green-600">✨ 節約中</span>
+                <span class="text-xs text-green-500 font-bold">{diffAmount.toLocaleString()}</span>
+              </div>
+            {:else}
+              <span class="text-lg font-bold text-gray-600">ー 平均的</span>
+            {/if}
+          </div>
+          <div class="text-right">
+            <span class="text-xs text-gray-400 block">平均支出</span>
+            <span class="text-sm text-gray-600">¥ {avgExpense.toLocaleString()}</span>
+          </div>
+        </div>
+
+        {#if topMoverName}
+          <div class="mt-3 pt-2 border-t border-gray-100 flex items-center justify-between text-xs">
+            <span class="text-gray-500">
+              {topMoverType === 'increase' ? '主な増加要因' : '主な節約要因'}:
+            </span>
+            <div class="flex items-center gap-1 font-bold">
+              <span>{topMoverName}</span>
+              <span class={topMoverType === 'increase' ? 'text-red-500' : 'text-green-600'}>
+                ({topMoverDiff > 0 ? '+' : ''}{topMoverDiff.toLocaleString()})
+              </span>
+            </div>
+          </div>
+        {/if}
+      </div>
+    {/if}
+
+    {#if prevTotalAssets > 0}
+      <div class="rounded-lg bg-white p-4 shadow-sm border border-gray-200">
+        <p class="text-xs text-gray-500 mb-2">資産成長 (vs 先月)</p>
+        <div class="flex items-center justify-between mb-3">
+          <div>
+            {#if assetDiff >= 0}
+              <div class="flex items-baseline gap-1">
+                <span class="text-lg font-bold text-blue-600">↗ 増えた</span>
+                <span class="text-xs text-blue-500 font-bold">+{assetDiff.toLocaleString()}</span>
+              </div>
+            {:else}
+              <div class="flex items-baseline gap-1">
+                <span class="text-lg font-bold text-red-500">↘ 減った</span>
+                <span class="text-xs text-red-400 font-bold">{assetDiff.toLocaleString()}</span>
+              </div>
+            {/if}
+          </div>
+          <div class="text-right">
+            <span class="text-xs text-gray-400 block">成長率</span>
+            <span class={`text-sm font-bold ${assetDiff >= 0 ? 'text-blue-600' : 'text-red-500'}`}>
+              {assetDiff > 0 ? '+' : ''}{assetGrowthRate}%
+            </span>
+          </div>
+        </div>
+        <div class="mt-2 pt-2 border-t border-gray-100">
+          <div class="flex justify-between text-xs mb-1">
+            <span class="text-gray-500">次の {nextMilestone/10000}万 まで</span>
+            <span class="font-bold text-indigo-600">あと {toMilestone.toLocaleString()} 円</span>
+          </div>
+          <div class="h-1.5 w-full bg-gray-100 rounded-full overflow-hidden">
+            <div 
+              class="h-full bg-indigo-500 rounded-full transition-all duration-500"
+              style={`width: ${(1 - toMilestone/1000000) * 100}%`}
+            ></div>
+          </div>
+        </div>
+      </div>
+    {/if}
   </div>
 
   <div class="grid grid-cols-3 gap-3">
@@ -214,11 +425,26 @@
       </button>
     </div>
 
-    <div class="h-64 relative">
+    <div class="h-96 relative">
       {#if (activeChart === 'expense' && expenseData.length === 0) || (activeChart === 'assets' && assetsData.length === 0)}
-        <div class="absolute inset-0 flex flex-col items-center justify-center text-gray-400 text-sm">
-          <p>データがありません</p>
-          <p class="text-xs mt-1">下のボタンから入力してください</p>
+        <div class="absolute inset-0 flex flex-col items-center justify-center text-center p-4">
+          <div class="mb-4 text-gray-300">
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="1.5" stroke="currentColor" class="w-12 h-12 mx-auto">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M3.75 3v11.25A2.25 2.25 0 006 16.5h2.25M3.75 3h-1.5m1.5 0h16.5m0 0h1.5m-1.5 0v11.25A2.25 2.25 0 0118 16.5h-2.25m-7.5 0h7.5m-7.5 0l-1 3m8.5-3l1 3m0 0l.5 1.5m-.5-1.5h-9.5m0 0l-.5 1.5M9 11.25v1.5M12 9v3.75m3-6v6" />
+            </svg>
+          </div>
+          <p class="text-gray-500 font-bold mb-1">データがありません</p>
+          <p class="text-xs text-gray-400 mb-4">まだこの月の記録がありません。</p>
+          
+          <a
+            href="/input?year={year}&month={month}"
+            class="inline-flex items-center gap-2 rounded-full bg-indigo-50 px-6 py-2 text-sm font-bold text-indigo-600 hover:bg-indigo-100 transition-colors"
+          >
+            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" stroke-width="2" stroke="currentColor" class="w-4 h-4">
+              <path stroke-linecap="round" stroke-linejoin="round" d="M16.862 4.487l1.687-1.688a1.875 1.875 0 112.652 2.652L10.582 16.07a4.5 4.5 0 01-1.897 1.13L6 18l.8-2.685a4.5 4.5 0 011.13-1.897l8.932-8.931zm0 0L19.5 7.125M18 14v4.75A2.25 2.25 0 0115.75 21H5.25A2.25 2.25 0 013 18.75V8.25A2.25 2.25 0 015.25 6H10" />
+            </svg>
+            データを入力する
+          </a>
         </div>
       {:else}
         <canvas bind:this={canvasRef}></canvas>
