@@ -101,12 +101,7 @@
 		on:click={openPicker}
 		type="button"
 	>
-		<input
-			bind:this={pickerInput}
-			type="text"
-			readonly
-			class="absolute inset-0 w-full h-full opacity-0 -z-10 cursor-pointer"
-		/>
+		<input bind:this={pickerInput} type="text" readonly class="sr-only pointer-events-none" />
 		<div
 			class="inline-flex items-center gap-2 px-4 py-2 rounded-lg group-hover:bg-gray-100 transition-colors cursor-pointer"
 		>
