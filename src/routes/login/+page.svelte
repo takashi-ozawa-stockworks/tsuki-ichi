@@ -55,6 +55,28 @@
       loading = false;
     }
   };
+
+  // デモログイン処理
+  const handleDemoLogin = async () => {
+    loading = true;
+    message = '';
+    isError = false;
+
+    try {
+      // 事前に作成したデモ用アカウントの情報をハードコード
+      const { error } = await supabase.auth.signInWithPassword({
+        email: 'demo@stockworks.dev',
+        password: 'demopassword',
+      });
+      if (error) throw error;
+      goto('/');
+    } catch (error: any) {
+      isError = true;
+      message = 'デモログインに失敗しました: ' + error.message;
+    } finally {
+      loading = false;
+    }
+  };
 </script>
 
 <div class="flex min-h-screen flex-col items-center justify-center bg-gray-50 px-4">
@@ -128,7 +150,7 @@
       <button
         on:click={isSignUp ? handleSignUp : handleLogin}
         disabled={loading}
-        class="w-full rounded-lg bg-indigo-600 px-4 py-2.5 font-bold text-white shadow hover:bg-indigo-700 disabled:opacity-50 transition-colors"
+        class="w-full rounded-lg bg-indigo-600 px-4 py-2.5 mt-5 font-bold text-white shadow hover:bg-indigo-700 disabled:opacity-50 transition-colors"
       >
         {#if loading}
           Processing...
@@ -152,6 +174,20 @@
             : 'アカウントをお持ちでないですか？ 新規登録'}
         </button>
       </div>
+
+      <div class="relative flex py-1 items-center">
+        <div class="flex-grow border-t border-gray-200"></div>
+        <span class="flex-shrink-0 mx-2 text-gray-400 text-xs">または</span>
+        <div class="flex-grow border-t border-gray-200"></div>
+      </div>
+
+      <button
+        on:click={handleDemoLogin}
+        disabled={loading}
+        class="w-full rounded-lg bg-emerald-500 px-4 py-2.5 font-bold text-white shadow hover:bg-emerald-600 disabled:opacity-50 transition-colors flex items-center justify-center gap-2"
+      >
+        ゲストとして試す
+      </button>
     </div>
   </div>
   
