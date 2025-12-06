@@ -75,7 +75,7 @@ Excelのようなリスト形式で、数値を直接入力・編集します。
 
 1.  **リポジトリのクローン**
     ```bash
-    git clone [https://github.com/takashi-ozawa-stockworks/tsuki-ichi.git](https://github.com/takashi-ozawa-stockworks/tsuki-ichi.git)
+    git clone https://github.com/takashi-ozawa-stockworks/tsuki-ichi.git
     cd tsuki-ichi
     ```
 
