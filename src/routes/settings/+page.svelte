@@ -103,7 +103,7 @@
     }
   };
 
-  // 口座追加
+  // 口座・資産追加
   const addAccount = async () => {
     const validName = validateInput(newAccountName, accounts, '口座名');
     if (!validName) return;
@@ -120,7 +120,7 @@
     if (!error) { 
       newAccountName = ''; 
       await fetchData(); 
-      showToast('口座を追加しました', 'success');
+      showToast('口座・資産を追加しました', 'success');
     } else {
       showToast('エラー: ' + error.message, 'error');
     }
@@ -133,7 +133,7 @@
     const { error } = await supabase.from('accounts').delete().eq('id', id);
     if (!error) {
       await fetchData();
-      showToast('口座を削除しました', 'success');
+      showToast('口座・資産を削除しました', 'success');
     } else {
       showToast('エラー: ' + error.message, 'error');
     }
@@ -264,7 +264,7 @@
       <input 
         type="text" 
         bind:value={newAccountName} 
-        placeholder="口座名 (20文字以内)" 
+        placeholder="口座・資産名 (20文字以内)" 
         class="rounded border-gray-300 py-2 text-sm w-full flex-1" 
       />
       <button 

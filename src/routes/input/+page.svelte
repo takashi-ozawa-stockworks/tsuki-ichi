@@ -3,7 +3,7 @@
   import { onMount } from 'svelte';
   import { goto } from '$app/navigation';
   import { page } from '$app/stores';
-  import { fade, fly, slide } from 'svelte/transition'; // ★追加: アニメーション用
+  import { fade, fly, slide } from 'svelte/transition';
 
   // --- 1. 状態管理 ---
   let loading = true;
@@ -21,7 +21,7 @@
 
   $: pickerValue = `${year}-${String(month).padStart(2, '0')}`;
 
-  // ★追加: トースト通知管理
+  // トースト通知管理
   let toastMessage = '';
   let toastType: 'success' | 'error' = 'success';
   let toastTimeout: any;
@@ -80,6 +80,11 @@
 
   $: year, month, loadData();
 
+  // ★追加: 保存ボタンを無効化するかどうかの判定ロジック
+  $: isSaveDisabled = saving || 
+                      (activeTab === 'pl' && categories.length === 0) || 
+                      (activeTab === 'bs' && accounts.length === 0);
+
   // --- 3. 保存処理 ---
   const handleSave = async () => {
     saving = true;
@@ -93,11 +98,8 @@
       }));
       const { error } = await supabase.from('monthly_category_values').upsert(upsertData, { onConflict: 'user_id, year, month, category_id' });
       
-      if (error) {
-        showToast('保存失敗: ' + error.message, 'error'); // alertを変更
-      } else {
-        showToast('収支データを保存しました！', 'success'); // alertを変更
-      }
+      if (error) showToast('保存失敗: ' + error.message, 'error');
+      else showToast('収支データを保存しました！', 'success');
 
     } else {
       const upsertData = accounts.map(acc => ({
@@ -106,11 +108,8 @@
       }));
       const { error } = await supabase.from('monthly_account_balances').upsert(upsertData, { onConflict: 'user_id, year, month, account_id' });
       
-      if (error) {
-        showToast('保存失敗: ' + error.message, 'error');
-      } else {
-        showToast('資産残高を保存しました！', 'success');
-      }
+      if (error) showToast('保存失敗: ' + error.message, 'error');
+      else showToast('資産残高を保存しました！', 'success');
     }
     saving = false;
   };
@@ -163,50 +162,74 @@
     <div class="p-10 text-center text-gray-400">Loading...</div>
   {:else}
     {#if activeTab === 'pl'}
-      <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-        <div class="bg-blue-50 px-4 py-2 text-xs font-bold text-blue-800">収入 (Income)</div>
-        {#each categories.filter((c) => c.type === 'income') as cat}
-          <div transition:slide class="flex items-center justify-between border-b border-gray-100 px-4 py-3 last:border-0">
-            <label class="text-sm font-medium text-gray-700">{cat.name}</label>
-            <div class="relative w-32">
-              <input type="text" inputmode="numeric" value={(categoryValues[cat.id] || 0).toLocaleString()} on:input={(e) => updateAmount(e, cat.id, 'category')} on:focus={(e) => e.currentTarget.select()} class="w-full rounded border-gray-300 py-1 pl-2 pr-8 text-right text-sm focus:border-blue-500 focus:ring-blue-500" />
-              <span class="absolute right-3 top-1.5 text-xs text-gray-400">円</span>
+      {#if categories.length === 0}
+        <div class="rounded-lg border-2 border-dashed border-gray-200 p-8 text-center" in:fade>
+          <p class="text-gray-500 mb-2 font-bold">カテゴリーがありません</p>
+          <p class="text-sm text-gray-400 mb-4">まずは設定画面で費目（食費など）を追加してください。</p>
+          <a href="/settings" class="inline-flex items-center gap-2 rounded-full bg-gray-100 px-6 py-2 text-sm font-bold text-indigo-600 hover:bg-gray-200 transition-colors">
+            ⚙️ 設定画面へ
+          </a>
+        </div>
+      {:else}
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+          <div class="bg-blue-50 px-4 py-2 text-xs font-bold text-blue-800">収入 (Income)</div>
+          {#each categories.filter((c) => c.type === 'income') as cat}
+            <div transition:slide class="flex items-center justify-between border-b border-gray-100 px-4 py-3 last:border-0">
+              <label class="text-sm font-medium text-gray-700">{cat.name}</label>
+              <div class="relative w-32">
+                <input type="text" inputmode="numeric" value={(categoryValues[cat.id] || 0).toLocaleString()} on:input={(e) => updateAmount(e, cat.id, 'category')} on:focus={(e) => e.currentTarget.select()} class="w-full rounded border-gray-300 py-1 pl-2 pr-8 text-right text-sm focus:border-blue-500 focus:ring-blue-500" />
+                <span class="absolute right-3 top-1.5 text-xs text-gray-400">円</span>
+              </div>
             </div>
-          </div>
-        {/each}
+          {/each}
 
-        <div class="bg-red-50 px-4 py-2 text-xs font-bold text-red-800">支出 (Expense)</div>
-        {#each categories.filter((c) => c.type === 'expense') as cat}
-          <div transition:slide class="flex items-center justify-between border-b border-gray-100 px-4 py-3 last:border-0">
-            <label class="text-sm font-medium text-gray-700">{cat.name}</label>
-            <div class="relative w-32">
-              <input type="text" inputmode="numeric" value={(categoryValues[cat.id] || 0).toLocaleString()} on:input={(e) => updateAmount(e, cat.id, 'category')} on:focus={(e) => e.currentTarget.select()} class="w-full rounded border-gray-300 py-1 pl-2 pr-8 text-right text-sm focus:border-red-500 focus:ring-red-500" />
-              <span class="absolute right-3 top-1.5 text-xs text-gray-400">円</span>
+          <div class="bg-red-50 px-4 py-2 text-xs font-bold text-red-800">支出 (Expense)</div>
+          {#each categories.filter((c) => c.type === 'expense') as cat}
+            <div transition:slide class="flex items-center justify-between border-b border-gray-100 px-4 py-3 last:border-0">
+              <label class="text-sm font-medium text-gray-700">{cat.name}</label>
+              <div class="relative w-32">
+                <input type="text" inputmode="numeric" value={(categoryValues[cat.id] || 0).toLocaleString()} on:input={(e) => updateAmount(e, cat.id, 'category')} on:focus={(e) => e.currentTarget.select()} class="w-full rounded border-gray-300 py-1 pl-2 pr-8 text-right text-sm focus:border-red-500 focus:ring-red-500" />
+                <span class="absolute right-3 top-1.5 text-xs text-gray-400">円</span>
+              </div>
             </div>
-          </div>
-        {/each}
-      </div>
+          {/each}
+        </div>
+      {/if}
     {/if}
 
     {#if activeTab === 'bs'}
-      <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
-        <div class="bg-green-50 px-4 py-2 text-xs font-bold text-green-800">口座残高 (Balance)</div>
-        {#each accounts as acc}
-          <div transition:slide class="flex items-center justify-between border-b border-gray-100 px-4 py-3 last:border-0">
-            <label class="text-sm font-medium text-gray-700">{acc.name}</label>
-            <div class="relative w-40">
-              <input type="text" inputmode="numeric" value={(accountBalances[acc.id] || 0).toLocaleString()} on:input={(e) => updateAmount(e, acc.id, 'account')} on:focus={(e) => e.currentTarget.select()} class="w-full rounded border-gray-300 py-1 pl-2 pr-8 text-right text-sm focus:border-green-500 focus:ring-green-500" />
-              <span class="absolute right-3 top-1.5 text-xs text-gray-400">円</span>
+      {#if accounts.length === 0}
+        <div class="rounded-lg border-2 border-dashed border-gray-200 p-8 text-center" in:fade>
+          <p class="text-gray-500 mb-2 font-bold">口座が登録されていません</p>
+          <p class="text-sm text-gray-400 mb-4">銀行や財布などの資産管理先を追加してください。</p>
+          <a href="/settings" class="inline-flex items-center gap-2 rounded-full bg-gray-100 px-6 py-2 text-sm font-bold text-indigo-600 hover:bg-gray-200 transition-colors">
+            ⚙️ 設定画面へ
+          </a>
+        </div>
+      {:else}
+        <div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
+          <div class="bg-green-50 px-4 py-2 text-xs font-bold text-green-800">口座残高 (Balance)</div>
+          {#each accounts as acc}
+            <div transition:slide class="flex items-center justify-between border-b border-gray-100 px-4 py-3 last:border-0">
+              <label class="text-sm font-medium text-gray-700">{acc.name}</label>
+              <div class="relative w-40">
+                <input type="text" inputmode="numeric" value={(accountBalances[acc.id] || 0).toLocaleString()} on:input={(e) => updateAmount(e, acc.id, 'account')} on:focus={(e) => e.currentTarget.select()} class="w-full rounded border-gray-300 py-1 pl-2 pr-8 text-right text-sm focus:border-green-500 focus:ring-green-500" />
+                <span class="absolute right-3 top-1.5 text-xs text-gray-400">円</span>
+              </div>
             </div>
-          </div>
-        {/each}
-      </div>
+          {/each}
+        </div>
+      {/if}
     {/if}
   {/if}
 
   <div class="fixed bottom-0 left-0 right-0 z-20 border-t border-gray-100 bg-white/90 backdrop-blur-sm p-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
     <div class="mx-auto max-w-4xl">
-      <button on:click={handleSave} disabled={saving} class="w-full rounded-lg bg-indigo-600 py-3 font-bold text-white shadow-md hover:bg-indigo-700 hover:shadow-lg disabled:opacity-50 transition-all active:scale-[0.98]">
+      <button 
+        on:click={handleSave} 
+        disabled={isSaveDisabled} 
+        class="w-full rounded-lg bg-indigo-600 py-3 font-bold text-white shadow-md hover:bg-indigo-700 hover:shadow-lg disabled:opacity-50 disabled:cursor-not-allowed transition-all active:scale-[0.98]"
+      >
         {#if saving}保存中...{:else}保存する{/if}
       </button>
     </div>
