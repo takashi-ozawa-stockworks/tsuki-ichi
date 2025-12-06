@@ -50,6 +50,9 @@
         </h1>
 
         <div class="flex items-center gap-4">
+          <a href="/settings" class="text-sm font-medium text-gray-600 hover:text-indigo-600">
+            ⚙️ 設定
+          </a>
           <span class="text-xs text-gray-500 hidden sm:inline">{session.user.email}</span>
           <button 
             on:click={handleLogout}
