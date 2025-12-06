@@ -96,12 +96,20 @@
 		</svg>
 	</button>
 
+	<!-- flatpickr用の隠しinput（ボタン外に配置してタッチ干渉を防止） -->
+	<input
+		bind:this={pickerInput}
+		type="text"
+		readonly
+		tabindex="-1"
+		class="absolute -top-[9999px] -left-[9999px] w-px h-px opacity-0 pointer-events-none"
+	/>
+
 	<button
 		class="relative group flex-1 text-center focus:outline-none"
 		on:click={openPicker}
 		type="button"
 	>
-		<input bind:this={pickerInput} type="text" readonly class="sr-only pointer-events-none" />
 		<div
 			class="inline-flex items-center gap-2 px-4 py-2 rounded-lg group-hover:bg-gray-100 transition-colors cursor-pointer"
 		>
