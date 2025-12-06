@@ -38,6 +38,8 @@
 		"vite": "7.2.2"
 	},
 	"dependencies": {
-		"@supabase/supabase-js": "2.86.2"
+		"@supabase/supabase-js": "2.86.2",
+		"chart.js": "4.5.1",
+		"chartjs-plugin-datalabels": "^2.2.0"
 	}
 }
