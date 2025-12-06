@@ -1,81 +1,82 @@
 <script lang="ts">
-  import { onMount, onDestroy, createEventDispatcher } from 'svelte';
-  import flatpickr from 'flatpickr';
-  import monthSelectPlugin from 'flatpickr/dist/plugins/monthSelect';
-  import { Japanese } from 'flatpickr/dist/l10n/ja.js';
-  import 'flatpickr/dist/flatpickr.min.css';
-  import 'flatpickr/dist/plugins/monthSelect/style.css';
+	import { createEventDispatcher } from 'svelte';
 
-  // Props
-  export let year: number;
-  export let month: number;
-  export let maxYear: number;
-  export let maxMonth: number;
+	// Props
+	export let year: number;
+	export let month: number;
+	export let maxYear: number;
+	export let maxMonth: number;
 
-  const dispatch = createEventDispatcher<{ change: { year: number; month: number } }>();
+	const dispatch = createEventDispatcher<{ change: { year: number; month: number } }>();
 
-  let pickerInput: HTMLInputElement;
-  let picker: flatpickr.Instance;
+	// モーダル開閉状態
+	let isOpen = false;
+	let pickerYear = year;
 
-  $: pickerValue = `${year}-${String(month).padStart(2, '0')}`;
-  $: maxDateStr = `${maxYear}-${String(maxMonth).padStart(2, '0')}`;
-  $: isNextDisabled = pickerValue >= maxDateStr;
+	$: pickerValue = `${year}-${String(month).padStart(2, '0')}`;
+	$: maxDateStr = `${maxYear}-${String(maxMonth).padStart(2, '0')}`;
+	$: isNextDisabled = pickerValue >= maxDateStr;
 
-  const prevMonth = () => {
-    if (month === 1) {
-      year--;
-      month = 12;
-    } else {
-      month--;
-    }
-    dispatch('change', { year, month });
-  };
+	const monthNames = ['1月', '2月', '3月', '4月', '5月', '6月', '7月', '8月', '9月', '10月', '11月', '12月'];
 
-  const nextMonth = () => {
-    if (isNextDisabled) return;
-    if (month === 12) {
-      year++;
-      month = 1;
-    } else {
-      month++;
-    }
-    dispatch('change', { year, month });
-  };
+	const prevMonth = () => {
+		if (month === 1) {
+			year--;
+			month = 12;
+		} else {
+			month--;
+		}
+		dispatch('change', { year, month });
+	};
 
-  const openPicker = () => {
-    picker?.open();
-  };
+	const nextMonth = () => {
+		if (isNextDisabled) return;
+		if (month === 12) {
+			year++;
+			month = 1;
+		} else {
+			month++;
+		}
+		dispatch('change', { year, month });
+	};
 
-  onMount(() => {
-    picker = flatpickr(pickerInput, {
-      locale: Japanese,
-      plugins: [
-        monthSelectPlugin({
-          shorthand: true,
-          dateFormat: 'Y-m',
-          altFormat: 'Y年m月',
-        })
-      ],
-      defaultDate: new Date(year, month - 1, 1),
-      maxDate: new Date(maxYear, maxMonth - 1, 28),
-      onChange: (selectedDates) => {
-        if (selectedDates[0]) {
-          year = selectedDates[0].getFullYear();
-          month = selectedDates[0].getMonth() + 1;
-          dispatch('change', { year, month });
-        }
-      }
-    });
-  });
+	const openPicker = () => {
+		pickerYear = year;
+		isOpen = true;
+	};
 
-  onDestroy(() => {
-    picker?.destroy();
-  });
+	const closePicker = () => {
+		isOpen = false;
+	};
 
-  // Reactively update picker when props change externally
-  $: if (picker) {
-    picker.setDate(new Date(year, month - 1, 1), false);
-  }
+	const selectMonth = (selectedMonth: number) => {
+		year = pickerYear;
+		month = selectedMonth;
+		dispatch('change', { year, month });
+		closePicker();
+	};
+
+	const isMonthDisabled = (m: number): boolean => {
+		if (pickerYear > maxYear) return true;
+		if (pickerYear === maxYear && m > maxMonth) return true;
+		return false;
+	};
+
+	const prevYear = () => {
+		pickerYear--;
+	};
+
+	const nextYear = () => {
+		if (pickerYear < maxYear) {
+			pickerYear++;
+		}
+	};
+
+	const handleBackdropClick = (e: MouseEvent) => {
+		if (e.target === e.currentTarget) {
+			closePicker();
+		}
+	};
 </script>
 
 <div class="flex items-center justify-between">
@@ -95,15 +96,6 @@
 			<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
 		</svg>
 	</button>
-
-	<!-- flatpickr用の隠しinput（ボタン外に配置してタッチ干渉を防止） -->
-	<input
-		bind:this={pickerInput}
-		type="text"
-		readonly
-		tabindex="-1"
-		class="absolute -top-[9999px] -left-[9999px] w-px h-px opacity-0 pointer-events-none"
-	/>
 
 	<button
 		class="relative group flex-1 text-center focus:outline-none"
@@ -148,31 +140,83 @@
 	</button>
 </div>
 
-<style>
-  :global(.flatpickr-calendar) {
-    border-radius: 0.75rem;
-    box-shadow: 0 10px 25px -5px rgba(0, 0, 0, 0.1), 0 8px 10px -6px rgba(0, 0, 0, 0.1);
-    border: 1px solid #e5e7eb;
-  }
-  :global(.flatpickr-monthSelect-month) {
-    border-radius: 0.5rem;
-    font-weight: 500;
-  }
-  :global(.flatpickr-monthSelect-month:hover) {
-    background: #eef2ff !important;
-  }
-  :global(.flatpickr-monthSelect-month.selected) {
-    background: #6366f1 !important;
-    color: white !important;
-  }
-  :global(.flatpickr-current-month) {
-    font-weight: 700;
-    color: #1f2937;
-  }
-  :global(.flatpickr-prev-month, .flatpickr-next-month) {
-    color: #6b7280;
-  }
-  :global(.flatpickr-prev-month:hover, .flatpickr-next-month:hover) {
-    color: #6366f1;
-  }
-</style>
+<!-- 月選択モーダル -->
+{#if isOpen}
+	<!-- svelte-ignore a11y_click_events_have_key_events a11y_no_static_element_interactions -->
+	<div
+		class="fixed inset-0 z-50 flex items-center justify-center bg-black/30 backdrop-blur-sm"
+		on:click={handleBackdropClick}
+	>
+		<div class="bg-white rounded-xl shadow-2xl p-4 w-72 mx-4">
+			<!-- 年選択ヘッダー -->
+			<div class="flex items-center justify-between mb-4">
+				<button
+					class="p-2 rounded-full hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition-colors"
+					on:click={prevYear}
+					type="button"
+				>
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						fill="none"
+						viewBox="0 0 24 24"
+						stroke-width="2"
+						stroke="currentColor"
+						class="w-5 h-5"
+					>
+						<path stroke-linecap="round" stroke-linejoin="round" d="M15.75 19.5L8.25 12l7.5-7.5" />
+					</svg>
+				</button>
+				<span class="text-lg font-bold text-gray-800">{pickerYear}年</span>
+				<button
+					class="p-2 rounded-full hover:bg-gray-100 text-gray-500 hover:text-gray-700 transition-colors disabled:opacity-30 disabled:cursor-not-allowed"
+					on:click={nextYear}
+					disabled={pickerYear >= maxYear}
+					type="button"
+				>
+					<svg
+						xmlns="http://www.w3.org/2000/svg"
+						fill="none"
+						viewBox="0 0 24 24"
+						stroke-width="2"
+						stroke="currentColor"
+						class="w-5 h-5"
+					>
+						<path stroke-linecap="round" stroke-linejoin="round" d="M8.25 4.5l7.5 7.5-7.5 7.5" />
+					</svg>
+				</button>
+			</div>
+
+			<!-- 月グリッド -->
+			<div class="grid grid-cols-3 gap-2">
+				{#each monthNames as name, i}
+					{@const m = i + 1}
+					{@const disabled = isMonthDisabled(m)}
+					{@const selected = pickerYear === year && m === month}
+					<button
+						class="py-2 px-3 rounded-lg text-sm font-medium transition-all
+							{selected ? 'bg-indigo-600 text-white shadow-md' : ''}
+							{disabled
+							? 'text-gray-300 cursor-not-allowed'
+							: selected
+								? ''
+								: 'text-gray-700 hover:bg-indigo-50 hover:text-indigo-600'}"
+						on:click={() => !disabled && selectMonth(m)}
+						{disabled}
+						type="button"
+					>
+						{name}
+					</button>
+				{/each}
+			</div>
+
+			<!-- 閉じるボタン -->
+			<button
+				class="mt-4 w-full py-2 text-sm text-gray-500 hover:text-gray-700 hover:bg-gray-50 rounded-lg transition-colors"
+				on:click={closePicker}
+				type="button"
+			>
+				閉じる
+			</button>
+		</div>
+	</div>
+{/if}
