@@ -7,7 +7,7 @@
   let loading = false;
   let message = '';
   let isError = false;
-  let isSignUp = false; // ログインか登録かの切り替え
+  let isSignUp = false;
 
   // ログイン処理
   const handleLogin = async () => {
@@ -21,7 +21,7 @@
         password,
       });
       if (error) throw error;
-      goto('/'); // 成功したらトップページへ
+      goto('/');
     } catch (error: any) {
       isError = true;
       message = error.message;
@@ -54,30 +54,40 @@
   };
 </script>
 
-<div class="flex min-h-screen items-center justify-center bg-gray-100 p-4">
-  <div class="w-full max-w-md rounded-lg bg-white p-8 shadow-md">
-    <h1 class="mb-6 text-center text-2xl font-bold text-gray-800">
-      {isSignUp ? 'アカウント作成' : 'ログイン'}
+<div class="flex min-h-screen flex-col items-center justify-center bg-gray-50 px-4">
+  
+  <div class="mb-8 text-center">
+    <h1 class="text-4xl font-extrabold tracking-tight text-indigo-600">
+      Tsuki-Ichi
     </h1>
+    <p class="mt-2 text-sm text-gray-500">
+      月イチ管理で、資産を育てる。
+    </p>
+  </div>
+
+  <div class="w-full max-w-md rounded-xl bg-white p-8 shadow-xl ring-1 ring-gray-100">
+    <h2 class="mb-6 text-center text-xl font-bold text-gray-800">
+      {isSignUp ? 'アカウント作成' : 'ログイン'}
+    </h2>
 
     {#if message}
       <div class={`mb-4 rounded p-3 text-sm ${
         isError
-          ? 'bg-red-100 text-red-700 border border-red-200'
-          : 'bg-blue-100 text-blue-700 border border-blue-200'
+          ? 'bg-red-50 text-red-700 border border-red-100'
+          : 'bg-blue-50 text-blue-700 border border-blue-100'
       }`}>
         {message}
       </div>
     {/if}
 
-    <div class="space-y-4">
+    <div class="space-y-5">
       <div>
         <label class="block text-sm font-medium text-gray-700" for="email">Email</label>
         <input
           type="email"
           id="email"
           bind:value={email}
-          class="mt-1 block w-full rounded-md border-gray-300 p-2 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border"
+          class="mt-1 block w-full rounded-lg border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
           placeholder="your@email.com"
         />
       </div>
@@ -88,7 +98,7 @@
           type="password"
           id="password"
           bind:value={password}
-          class="mt-1 block w-full rounded-md border-gray-300 p-2 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm border"
+          class="mt-1 block w-full rounded-lg border-gray-300 px-3 py-2 shadow-sm focus:border-indigo-500 focus:ring-indigo-500 sm:text-sm"
           placeholder="••••••••"
         />
       </div>
@@ -96,10 +106,10 @@
       <button
         on:click={isSignUp ? handleSignUp : handleLogin}
         disabled={loading}
-        class="w-full rounded-md bg-indigo-600 px-4 py-2 text-white hover:bg-indigo-700 disabled:opacity-50"
+        class="w-full rounded-lg bg-indigo-600 px-4 py-2.5 font-bold text-white shadow hover:bg-indigo-700 disabled:opacity-50 transition-colors"
       >
         {#if loading}
-          処理中...
+          Processing...
         {:else}
           {isSignUp ? '登録する' : 'ログイン'}
         {/if}
@@ -107,7 +117,7 @@
 
       <div class="text-center text-sm">
         <button
-          class="text-indigo-600 hover:text-indigo-500"
+          class="text-indigo-600 hover:text-indigo-500 hover:underline"
           on:click={() => {
             isSignUp = !isSignUp;
             message = '';
@@ -120,5 +130,9 @@
         </button>
       </div>
     </div>
+  </div>
+  
+  <div class="mt-8 text-xs text-gray-400">
+    &copy; 2025 Tsuki-Ichi Personal App
   </div>
 </div>
