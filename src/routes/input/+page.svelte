@@ -6,51 +6,33 @@
   // --- 1. 状態管理 ---
   let loading = true;
   let saving = false;
-  let activeTab: 'pl' | 'bs' = 'pl'; // 'pl'=収支, 'bs'=資産
+  let activeTab: 'pl' | 'bs' = 'pl';
 
-  // 日付管理 (初期値は今日)
   const today = new Date();
   let year = today.getFullYear();
   let month = today.getMonth() + 1;
 
-  // データを入れる箱
-  let categories: any[] = []; // マスタ
-  let accounts: any[] = [];   // マスタ
+  let categories: any[] = [];
+  let accounts: any[] = [];
   
-  // 入力値の保管場所 { ID: 金額 } の形
   let categoryValues: Record<number, number> = {}; 
   let accountBalances: Record<number, number> = {};
 
   // --- 2. データ読み込み ---
   const loadData = async () => {
     loading = true;
-    
-    // A. 自分のユーザーID取得
     const { data: { user } } = await supabase.auth.getUser();
     if (!user) return goto('/login');
 
-    // B. マスタデータの取得
     const { data: catData } = await supabase.from('categories').select('*').order('id');
     const { data: accData } = await supabase.from('accounts').select('*').order('id');
     
     categories = catData || [];
     accounts = accData || [];
 
-    // C. 今月のデータを取得 (PL: 収支)
-    const { data: valData } = await supabase
-      .from('monthly_category_values')
-      .select('category_id, amount')
-      .eq('year', year)
-      .eq('month', month);
+    const { data: valData } = await supabase.from('monthly_category_values').select('category_id, amount').eq('year', year).eq('month', month);
+    const { data: balData } = await supabase.from('monthly_account_balances').select('account_id, balance').eq('year', year).eq('month', month);
 
-    // D. 今月のデータを取得 (BS: 資産)
-    const { data: balData } = await supabase
-      .from('monthly_account_balances')
-      .select('account_id, balance')
-      .eq('year', year)
-      .eq('month', month);
-
-    // E. 取得したデータを使いやすい形(Map)に変換
     categoryValues = {};
     valData?.forEach(v => categoryValues[v.category_id] = v.amount);
     
@@ -60,7 +42,6 @@
     loading = false;
   };
 
-  // 年月が変わったら再読み込み
   $: year, month, loadData();
 
   // --- 3. 保存処理 ---
@@ -70,50 +51,49 @@
     if (!user) return;
 
     if (activeTab === 'pl') {
-      // --- 収支(PL)の保存 ---
-      // 入力された値を配列に変換
       const upsertData = categories.map(cat => ({
-        user_id: user.id,
-        year,
-        month,
-        category_id: cat.id,
-        amount: categoryValues[cat.id] || 0 // 空欄なら0
+        user_id: user.id, year, month, category_id: cat.id,
+        amount: categoryValues[cat.id] || 0
       }));
-
-      // 一括保存 (Upsert: あれば更新、なければ作成)
       const { error } = await supabase.from('monthly_category_values').upsert(upsertData, { onConflict: 'user_id, year, month, category_id' });
       if (error) alert('保存失敗: ' + error.message);
       else alert('収支データを保存しました！');
 
     } else {
-      // --- 資産(BS)の保存 ---
       const upsertData = accounts.map(acc => ({
-        user_id: user.id,
-        year,
-        month,
-        account_id: acc.id,
+        user_id: user.id, year, month, account_id: acc.id,
         balance: accountBalances[acc.id] || 0
       }));
-
       const { error } = await supabase.from('monthly_account_balances').upsert(upsertData, { onConflict: 'user_id, year, month, account_id' });
       if (error) alert('保存失敗: ' + error.message);
       else alert('資産残高を保存しました！');
     }
-    
     saving = false;
+  };
+
+  // ★追加: 金額入力のハンドリング（カンマ処理・バリデーション）
+  const updateAmount = (e: Event, id: number, type: 'category' | 'account') => {
+    const input = e.target as HTMLInputElement;
+    
+    // 1. カンマと数字以外を除去（バリデーション）
+    const rawValue = input.value.replace(/,/g, '').replace(/\D/g, '');
+    const numValue = rawValue === '' ? 0 : parseInt(rawValue, 10);
+
+    // 2. 状態を更新（画面表示はSvelteのリアクティブ性により自動でカンマが付く）
+    if (type === 'category') {
+      categoryValues[id] = numValue;
+    } else {
+      accountBalances[id] = numValue;
+    }
   };
 </script>
 
-<div class="space-y-6 pb-20">
+<div class="space-y-6 pb-32">
   
   <div class="flex items-center justify-between bg-white p-4 rounded-lg shadow-sm border border-gray-100">
-    <button class="px-3 py-1 text-gray-500 hover:bg-gray-100 rounded" on:click={() => { month--; if(month<1){month=12; year--} }}>
-      ◀
-    </button>
+    <button class="px-3 py-1 text-gray-500 hover:bg-gray-100 rounded" on:click={() => { month--; if(month<1){month=12; year--} }}>◀</button>
     <h2 class="text-xl font-bold text-gray-800">{year}年 {month}月</h2>
-    <button class="px-3 py-1 text-gray-500 hover:bg-gray-100 rounded" on:click={() => { month++; if(month>12){month=1; year++} }}>
-      ▶
-    </button>
+    <button class="px-3 py-1 text-gray-500 hover:bg-gray-100 rounded" on:click={() => { month++; if(month>12){month=1; year++} }}>▶</button>
   </div>
 
   <div class="flex rounded-lg bg-gray-200 p-1">
@@ -143,9 +123,11 @@
             <label class="text-sm font-medium text-gray-700">{cat.name}</label>
             <div class="relative w-32">
               <input
-                type="number"
-                bind:value={categoryValues[cat.id]}
-                placeholder="0"
+                type="text"
+                inputmode="numeric"
+                value={(categoryValues[cat.id] || 0).toLocaleString()}
+                on:input={(e) => updateAmount(e, cat.id, 'category')}
+                on:focus={(e) => e.currentTarget.select()} 
                 class="w-full rounded border-gray-300 py-1 pl-2 pr-8 text-right text-sm focus:border-blue-500 focus:ring-blue-500"
               />
               <span class="absolute right-3 top-1.5 text-xs text-gray-400">円</span>
@@ -159,9 +141,11 @@
             <label class="text-sm font-medium text-gray-700">{cat.name}</label>
             <div class="relative w-32">
               <input
-                type="number"
-                bind:value={categoryValues[cat.id]}
-                placeholder="0"
+                type="text"
+                inputmode="numeric"
+                value={(categoryValues[cat.id] || 0).toLocaleString()}
+                on:input={(e) => updateAmount(e, cat.id, 'category')}
+                on:focus={(e) => e.currentTarget.select()}
                 class="w-full rounded border-gray-300 py-1 pl-2 pr-8 text-right text-sm focus:border-red-500 focus:ring-red-500"
               />
               <span class="absolute right-3 top-1.5 text-xs text-gray-400">円</span>
@@ -179,9 +163,11 @@
             <label class="text-sm font-medium text-gray-700">{acc.name}</label>
             <div class="relative w-40">
               <input
-                type="number"
-                bind:value={accountBalances[acc.id]}
-                placeholder="0"
+                type="text"
+                inputmode="numeric"
+                value={(accountBalances[acc.id] || 0).toLocaleString()}
+                on:input={(e) => updateAmount(e, acc.id, 'account')}
+                on:focus={(e) => e.currentTarget.select()}
                 class="w-full rounded border-gray-300 py-1 pl-2 pr-8 text-right text-sm focus:border-green-500 focus:ring-green-500"
               />
               <span class="absolute right-3 top-1.5 text-xs text-gray-400">円</span>
@@ -193,14 +179,16 @@
 
   {/if}
 
-  <div class="fixed bottom-0 left-0 right-0 border-t bg-white p-4 shadow-lg sm:static sm:border-0 sm:bg-transparent sm:shadow-none">
-    <button
-      on:click={handleSave}
-      disabled={saving}
-      class="w-full max-w-4xl mx-auto block rounded-lg bg-indigo-600 py-3 font-bold text-white shadow-md hover:bg-indigo-700 disabled:opacity-50"
-    >
-      {#if saving}保存中...{:else}保存する{/if}
-    </button>
+  <div class="fixed bottom-0 left-0 right-0 z-20 border-t border-gray-100 bg-white/90 backdrop-blur-sm p-4 shadow-[0_-4px_6px_-1px_rgba(0,0,0,0.1)]">
+    <div class="mx-auto max-w-4xl">
+      <button
+        on:click={handleSave}
+        disabled={saving}
+        class="w-full rounded-lg bg-indigo-600 py-3 font-bold text-white shadow-md hover:bg-indigo-700 hover:shadow-lg disabled:opacity-50 transition-all active:scale-[0.98]"
+      >
+        {#if saving}保存中...{:else}保存する{/if}
+      </button>
+    </div>
   </div>
 
 </div>
