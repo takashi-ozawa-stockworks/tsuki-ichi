@@ -4,6 +4,7 @@
   import { page } from '$app/stores';
   import { fade, fly, slide } from 'svelte/transition';
   import MonthPicker from '$lib/components/MonthPicker.svelte';
+  import AmountInputModal from '$lib/components/AmountInputModal.svelte';
 
   // --- 1. 状態管理 ---
   let loading = true;
@@ -46,6 +47,73 @@
   let accounts: any[] = [];
   let categoryValues: Record<number, number> = {}; 
   let accountBalances: Record<number, number> = {};
+
+  // --- モーダル状態 ---
+  let modalOpen = false;
+  let selectedItem: { id: number; name: string; type: string } | null = null;
+  let modalMode: 'category' | 'account' = 'category';
+
+  const openModal = (item: any, mode: 'category' | 'account') => {
+    selectedItem = { id: item.id, name: item.name, type: item.type };
+    modalMode = mode;
+    modalOpen = true;
+  };
+
+  const closeModal = () => {
+    modalOpen = false;
+    selectedItem = null;
+  };
+
+  const handleModalConfirm = (e: CustomEvent<{ value: number }>) => {
+    if (!selectedItem) return;
+    
+    if (modalMode === 'category') {
+      categoryValues[selectedItem.id] = e.detail.value;
+      categoryValues = { ...categoryValues };
+    } else {
+      accountBalances[selectedItem.id] = e.detail.value;
+      accountBalances = { ...accountBalances };
+    }
+  };
+
+  // カテゴリー編集・削除
+  const handleItemEdit = async (e: CustomEvent<{ id: number; newName: string }>) => {
+    const { id, newName } = e.detail;
+    const table = modalMode === 'category' ? 'categories' : 'accounts';
+    const label = modalMode === 'category' ? 'カテゴリー' : '口座';
+
+    const { error } = await supabase
+      .from(table)
+      .update({ name: newName })
+      .eq('id', id);
+
+    if (!error) {
+      await loadData();
+      // モーダル内の名称も更新
+      if (selectedItem && selectedItem.id === id) {
+        selectedItem = { ...selectedItem, name: newName };
+      }
+      showToast(`${label}名を更新しました`, 'success');
+    } else {
+      showToast('更新エラー: ' + error.message, 'error');
+    }
+  };
+
+  const handleItemDelete = async (e: CustomEvent<{ id: number }>) => {
+    const { id } = e.detail;
+    const table = modalMode === 'category' ? 'categories' : 'accounts';
+    const label = modalMode === 'category' ? 'カテゴリー' : '口座';
+
+    const { error } = await supabase.from(table).delete().eq('id', id);
+    
+    if (!error) {
+      await loadData();
+      showToast(`${label}を削除しました`, 'success');
+      closeModal();
+    } else {
+      showToast('削除エラー: ' + error.message, 'error');
+    }
+  };
 
   // --- 2. データ読み込み ---
   const loadData = async () => {
@@ -107,17 +175,6 @@
     saving = false;
   };
 
-  const updateAmount = (e: Event, id: number, type: 'category' | 'account') => {
-    const input = e.target as HTMLInputElement;
-    const rawValue = input.value.replace(/,/g, '').replace(/\D/g, '');
-    const numValue = rawValue === '' ? 0 : parseInt(rawValue, 10);
-
-    if (type === 'category') {
-      categoryValues[id] = numValue;
-    } else {
-      accountBalances[id] = numValue;
-    }
-  };
 
 </script>
 
@@ -164,44 +221,30 @@
 				<div class="bg-white rounded-lg shadow-sm border border-gray-200 overflow-hidden">
 					<div class="bg-blue-50 px-4 py-2 text-xs font-bold text-blue-800">収入 (Income)</div>
 					{#each categories.filter((c) => c.type === 'income') as cat}
-						<div
+						<button
 							transition:slide
-							class="flex items-center justify-between border-b border-gray-100 px-4 py-3 last:border-0"
+							class="flex w-full items-center justify-between border-b border-gray-100 px-4 py-3 last:border-0 hover:bg-blue-50 transition-colors text-left"
+							on:click={() => openModal(cat, 'category')}
 						>
-							<label class="text-sm font-medium text-gray-700">{cat.name}</label>
-							<div class="relative w-32">
-								<input
-									type="text"
-									inputmode="numeric"
-									value={(categoryValues[cat.id] || 0).toLocaleString()}
-									on:input={(e) => updateAmount(e, cat.id, 'category')}
-									on:focus={(e) => e.currentTarget.select()}
-									class="w-full rounded border-gray-300 py-1 pl-2 pr-8 text-right text-sm focus:border-blue-500 focus:ring-blue-500"
-								/>
-								<span class="absolute right-3 top-1.5 text-xs text-gray-400">円</span>
-							</div>
-						</div>
+							<span class="text-sm font-medium text-gray-700">{cat.name}</span>
+							<span class="text-sm font-semibold text-blue-600">
+								¥{(categoryValues[cat.id] || 0).toLocaleString()}
+							</span>
+						</button>
 					{/each}
 
 					<div class="bg-red-50 px-4 py-2 text-xs font-bold text-red-800">支出 (Expense)</div>
 					{#each categories.filter((c) => c.type === 'expense') as cat}
-						<div
+						<button
 							transition:slide
-							class="flex items-center justify-between border-b border-gray-100 px-4 py-3 last:border-0"
+							class="flex w-full items-center justify-between border-b border-gray-100 px-4 py-3 last:border-0 hover:bg-red-50 transition-colors text-left"
+							on:click={() => openModal(cat, 'category')}
 						>
-							<label class="text-sm font-medium text-gray-700">{cat.name}</label>
-							<div class="relative w-32">
-								<input
-									type="text"
-									inputmode="numeric"
-									value={(categoryValues[cat.id] || 0).toLocaleString()}
-									on:input={(e) => updateAmount(e, cat.id, 'category')}
-									on:focus={(e) => e.currentTarget.select()}
-									class="w-full rounded border-gray-300 py-1 pl-2 pr-8 text-right text-sm focus:border-red-500 focus:ring-red-500"
-								/>
-								<span class="absolute right-3 top-1.5 text-xs text-gray-400">円</span>
-							</div>
-						</div>
+							<span class="text-sm font-medium text-gray-700">{cat.name}</span>
+							<span class="text-sm font-semibold text-red-500">
+								¥{(categoryValues[cat.id] || 0).toLocaleString()}
+							</span>
+						</button>
 					{/each}
 				</div>
 			{/if}
@@ -225,23 +268,16 @@
 						口座残高 (Balance)
 					</div>
 					{#each accounts as acc}
-						<div
+						<button
 							transition:slide
-							class="flex items-center justify-between border-b border-gray-100 px-4 py-3 last:border-0"
+							class="flex w-full items-center justify-between border-b border-gray-100 px-4 py-3 last:border-0 hover:bg-green-50 transition-colors text-left"
+							on:click={() => openModal(acc, 'account')}
 						>
-							<label class="text-sm font-medium text-gray-700">{acc.name}</label>
-							<div class="relative w-40">
-								<input
-									type="text"
-									inputmode="numeric"
-									value={(accountBalances[acc.id] || 0).toLocaleString()}
-									on:input={(e) => updateAmount(e, acc.id, 'account')}
-									on:focus={(e) => e.currentTarget.select()}
-									class="w-full rounded border-gray-300 py-1 pl-2 pr-8 text-right text-sm focus:border-green-500 focus:ring-green-500"
-								/>
-								<span class="absolute right-3 top-1.5 text-xs text-gray-400">円</span>
-							</div>
-						</div>
+							<span class="text-sm font-medium text-gray-700">{acc.name}</span>
+							<span class="text-sm font-semibold text-green-600">
+								¥{(accountBalances[acc.id] || 0).toLocaleString()}
+							</span>
+						</button>
 					{/each}
 				</div>
 			{/if}
@@ -265,7 +301,7 @@
 	{#if toastMessage}
 		<div
 			transition:fly={{ y: 20, duration: 300 }}
-			class={`fixed bottom-24 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-lg text-white font-medium z-50 text-sm whitespace-nowrap ${
+			class={`fixed bottom-24 left-1/2 -translate-x-1/2 px-6 py-3 rounded-full shadow-lg text-white font-medium z-[70] text-sm whitespace-nowrap ${
 				toastType === 'success' ? 'bg-gray-800' : 'bg-red-500'
 			}`}
 		>
@@ -273,3 +309,17 @@
 		</div>
 	{/if}
 </div>
+
+<AmountInputModal
+	open={modalOpen}
+	item={selectedItem}
+	initialValue={selectedItem
+		? (modalMode === 'category'
+				? categoryValues[selectedItem.id]
+				: accountBalances[selectedItem.id]) || 0
+		: 0}
+	on:close={closeModal}
+	on:confirm={handleModalConfirm}
+	on:edit={handleItemEdit}
+	on:delete={handleItemDelete}
+/>
