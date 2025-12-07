@@ -98,6 +98,7 @@
         if (item.amount > 0) expenseData.push({ label: item.category.name, value: item.amount });
       }
     });
+    expenseData.sort((a, b) => b.value - a.value);
 
     totalAssets = 0;
     assetsData = [];
@@ -105,6 +106,7 @@
       totalAssets += item.balance;
       if (item.balance > 0) assetsData.push({ label: item.account.name, value: item.balance });
     });
+    assetsData.sort((a, b) => b.value - a.value);
 
     // --- 分析ロジック ---
 
